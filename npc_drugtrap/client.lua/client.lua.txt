@@ -1,0 +1,124 @@
+local Framework = nil
+local blip = nil
+
+Citizen.CreateThread(function()
+    while not Framework do
+        if ESX then Framework = 'ESX'
+        elseif QBCore then Framework = 'QBCore'
+        else Citizen.Wait(100) end
+    end
+    print('[npc_trap] Framework detected:', Framework)
+end)
+
+local function notify(text)
+    if Framework == 'ESX' then TriggerEvent('esx:showNotification', text)
+    elseif Framework == 'QBCore' then QBCore.Functions.Notify(text)
+    else print('[npc_trap]', text) end
+end
+
+local function alertPolice(coords)
+    TriggerServerEvent('npc_trap:policeAlert', coords)
+end
+
+local function createPoliceBlip(coords)
+    blip = AddBlipForCoord(coords.x, coords.y, coords.z)
+    SetBlipSprite(blip, 1)
+    SetBlipColour(blip, 1)
+    SetBlipScale(blip, 1.0)
+    SetBlipAsShortRange(blip, false)
+    BeginTextCommandSetBlipName("STRING")
+    AddTextComponentString("Suspected Drug Deal")
+    EndTextCommandSetBlipName(blip)
+    SetNewWaypoint(coords.x, coords.y)
+end
+
+local function clearBlip()
+    if DoesBlipExist(blip) then RemoveBlip(blip); blip = nil end
+end
+
+local function playCuffAnim()
+    local ped = PlayerPedId()
+    RequestAnimDict("mp_arresting")
+    while not HasAnimDictLoaded("mp_arresting") do Wait(0) end
+    TaskPlayAnim(ped, "mp_arresting", "idle", 8.0, -8, -1, 49, 0, false, false, false)
+end
+
+local function attemptDeal(npc)
+    if not DoesEntityExist(npc) then return end
+    if math.random(100) <= 30 then
+        DetainAndCuff(npc)
+    else
+        notify('Deal successful.')
+    end
+end
+
+function DetainAndCuff(npc)
+    local playerPed = PlayerPedId()
+    TaskTurnPedToFaceEntity(npc, playerPed, -1)
+    TaskStartScenarioInPlace(npc, "WORLD_HUMAN_STAND_IMPATIENT", 0, true)
+    FreezeEntityPosition(playerPed, true)
+    playCuffAnim()
+    notify('You’ve been cuffed!')
+    local coords = GetEntityCoords(playerPed)
+    alertPolice(coords)
+    Citizen.SetTimeout(5000, function()
+        notify('[Y] Fight | [U] Flee | [I] Submit')
+        CreateThread(function()
+            local deadline = GetGameTimer() + 10000
+            while GetGameTimer() < deadline do
+                if IsControlJustReleased(0, 246) then handleOutcome('fight'); return
+                elseif IsControlJustReleased(0, 303) then handleOutcome('flee'); return
+                elseif IsControlJustReleased(0, 249) then handleOutcome('submit'); return
+                end
+                Wait(0)
+            end
+            handleOutcome('submit')
+        end)
+    end)
+end
+
+function handleOutcome(action)
+    local ped = PlayerPedId()
+    FreezeEntityPosition(ped, false)
+    ClearPedTasks(ped)
+    clearBlip()
+    if action == 'fight' then
+        notify('You resist the arrest!')
+        SetPedCombatAttributes(ped, 46, true)
+        GiveWeaponToPed(ped, GetHashKey("WEAPON_UNARMED"), 0, false, true)
+    elseif action == 'flee' then
+        notify('You broke free and fled!')
+        ClearPedTasksImmediately(ped)
+    else
+        notify('You have submitted to arrest.')
+    end
+end
+
+RegisterCommand('dealnpc', function()
+    local playerPed = PlayerPedId()
+    local coords = GetEntityCoords(playerPed)
+    local closest, dist = nil, 2.0
+    for ped in EnumeratePeds() do
+        if not IsPedAPlayer(ped) then
+            local d = #(coords - GetEntityCoords(ped))
+            if d < dist then closest, dist = ped, d end
+        end
+    end
+    if closest then attemptDeal(closest) else notify('No NPC nearby.') end
+end)
+
+AddEventHandler('npc_trap:notifyPolice', function(msg, coords)
+    notify("[PD ALERT] " .. msg)
+    createPoliceBlip(coords)
+end)
+
+function EnumeratePeds()
+    return coroutine.wrap(function()
+        local h, ped = FindFirstPed()
+        repeat
+            coroutine.yield(ped)
+            success, ped = FindNextPed(h)
+        until not success
+        EndFindPed(h)
+    end)
+end
