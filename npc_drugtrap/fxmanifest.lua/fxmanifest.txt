@@ -1,0 +1,14 @@
+fx_version 'cerulean'
+game 'gta5'
+
+description 'NPC Drug Trap with Cuffing, Animations, Dispatch Blip, and Police Integration'
+author 'ChatGPT'
+version '1.2.0'
+
+client_script 'client.lua'
+server_script 'server.lua'
+
+dependencies {
+    'es_extended',   -- optional ESX
+    'qb-core'        -- optional QBCore
+}

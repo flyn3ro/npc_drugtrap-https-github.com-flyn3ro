@@ -1,0 +1,25 @@
+local Framework = nil
+local ESX, QBCore = nil, nil
+
+TriggerEvent('esx:getSharedObject', function(obj) ESX = obj end)
+if QBCore then Framework = 'QBCore' elseif ESX then Framework = 'ESX' end
+
+RegisterNetEvent('npc_trap:policeAlert')
+AddEventHandler('npc_trap:policeAlert', function(coords)
+    local msg = string.format("Suspected drug deal trap — suspect detained at (~%.1f, ~%.1f, ~%.1f)", coords.x, coords.y, coords.z)
+    print("[npc_trap] " .. msg)
+    for _, id in pairs(GetPlayers()) do
+        local isPolice = false
+        if ESX then
+            local xPlayer = ESX.GetPlayerFromId(id)
+            if xPlayer and xPlayer.job.name == 'police' then isPolice = true end
+        end
+        if QBCore then
+            local player = QBCore.Functions.GetPlayer(id)
+            if player and player.PlayerData.job.name == 'police' then isPolice = true end
+        end
+        if isPolice then
+            TriggerClientEvent('npc_trap:notifyPolice', id, msg, coords)
+        end
+    end
+end)
